@@ -9,6 +9,8 @@ use Oddvalue\LaravelDrafts\Facades\LaravelDrafts;
 
 /**
  * @template TModel of Model
+ *
+ * @implements Scope<TModel>
  */
 class PublishingScope implements Scope
 {
@@ -20,7 +22,7 @@ class PublishingScope implements Scope
     protected $extensions = [/*'Publish', 'Unpublish', 'Schedule', */'Published', 'WithDrafts', 'WithoutDrafts', 'OnlyDrafts'];
 
     /**
-     * @param Builder<TModel> $builder
+     * @param Builder<covariant TModel> $builder
      * @param TModel $model
      */
     public function apply(Builder $builder, Model $model): void

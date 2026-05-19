@@ -117,10 +117,15 @@ trait HasDrafts
         }
 
         $updatingModel = $this->fresh();
-        $revision = $updatingModel?->replicate();
+
+        if ($updatingModel === null) {
+            return;
+        }
+
+        $revision = $updatingModel->replicate();
 
         static::saved(function (Model $model) use ($updatingModel, $revision): void {
-            if ($model->isNot($this) || $revision === null || $updatingModel === null) {
+            if ($model->isNot($this)) {
                 return;
             }
 
