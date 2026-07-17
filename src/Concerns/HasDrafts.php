@@ -13,6 +13,7 @@ use Illuminate\Database\Eloquent\Relations\MorphToMany;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Str;
 use JetBrains\PhpStorm\ArrayShape;
+use LogicException;
 use Oddvalue\LaravelDrafts\Facades\LaravelDrafts;
 
 /**
@@ -21,6 +22,8 @@ use Oddvalue\LaravelDrafts\Facades\LaravelDrafts;
  * @method static Builder<TModel> | TModel current()
  * @method static Builder<TModel> | TModel withoutCurrent()
  * @method static Builder<TModel> | TModel excludeRevision(int | TModel $exclude)
+ * @method static Builder<TModel> | TModel onlyAutoDrafts()
+ * @method static Builder<TModel> | TModel withoutAutoDrafts()
  *
  * @mixin TModel
  */
@@ -45,6 +48,12 @@ trait HasDrafts
             $this->getIsPublishedColumn() => 'boolean',
             $this->getPublishedAtColumn() => 'datetime',
         ]);
+
+        if (static::autoDraftsEnabled()) {
+            $this->mergeCasts([
+                $this->getIsAutoColumn() => 'boolean',
+            ]);
+        }
     }
 
     public static function bootHasDrafts(): void
@@ -107,6 +116,8 @@ trait HasDrafts
             config('drafts.revisions.keep') < 1
             // This model has been set not to create a revision
             || $this->shouldCreateRevision() === false
+            // Auto drafts are ephemeral working copies and never spawn revisions
+            || $this->isAutoDraft()
             // The record is being soft deleted or restored
             /** @phpstan-ignore argument.type */
             || $this->isDirty(method_exists($this, 'getDeletedAtColumn') ? $this->getDeletedAtColumn() : 'deleted_at')
@@ -370,8 +381,57 @@ trait HasDrafts
     }
 
     /**
+     * Create or update the record's auto draft.
+     *
+     * The auto draft is a single, quietly saved working copy of the record —
+     * intended for auto-save/recovery features. It is upserted in place on
+     * every call, is never flagged as current or published and never spawns
+     * revisions, so the record, any intentional drafts and the revision
+     * history are left untouched.
+     *
+     * @param array<string, mixed> $attributes
+     */
+    public function saveAsAutoDraft(array $attributes = []): static
+    {
+        throw_unless(static::autoDraftsEnabled(), LogicException::class, 'Auto drafts are disabled. Set the drafts.auto_drafts.enabled config option to true to use them.');
+        throw_unless($this->exists, LogicException::class, 'An auto draft can only be saved for an existing record.');
+
+        /** @var static|null $autoDraft */
+        $autoDraft = $this->autoDraft()->first();
+        $autoDraft ??= $this->replicate();
+
+        $autoDraft->forceFill([
+            ...$attributes,
+            $this->getIsCurrentColumn() => false,
+            $this->getIsPublishedColumn() => false,
+            $this->getPublishedAtColumn() => null,
+            $this->getIsAutoColumn() => true,
+        ]);
+
+        $autoDraft->saveQuietly();
+
+        return $autoDraft;
+    }
+
+    /**
+     * Delete the record's auto draft, if one exists.
+     *
+     * Deletes through the query builder on purpose: an Eloquent delete on a
+     * HasDrafts model cascades to every revision sharing the record's uuid.
+     */
+    public function discardAutoDraft(): void
+    {
+        throw_unless(static::autoDraftsEnabled(), LogicException::class, 'Auto drafts are disabled. Set the drafts.auto_drafts.enabled config option to true to use them.');
+
+        $this->newModelQuery()
+            ->where($this->getUuidColumn(), $this->{$this->getUuidColumn()})
+            ->where($this->getIsAutoColumn(), true)
+            ->toBase()
+            ->delete();
+    }
+
+    /**
      * @param array<string, mixed> ...$attributes
-     * @return static
      */
     public static function createDraft(...$attributes): self
     {
@@ -398,10 +458,10 @@ trait HasDrafts
     {
         self::withoutEvents(function (): void {
             // @phpstan-ignore-next-line method.notFound, method.nonObject
-            $revisionsToKeep = $this->revisions()->orderByDesc($this->getUpdatedAtColumn() ?? 'updated_at')->onlyDrafts()->withoutCurrent()->take(config('drafts.revisions.keep'))->pluck('id')->merge($this->revisions()->current()->pluck('id'))->merge($this->revisions()->published()->pluck('id'));
+            $revisionsToKeep = $this->revisions()->orderByDesc($this->getUpdatedAtColumn() ?? 'updated_at')->onlyDrafts()->withoutCurrent()->withoutAutoDrafts()->take(config('drafts.revisions.keep'))->pluck('id')->merge($this->revisions()->current()->pluck('id'))->merge($this->revisions()->published()->pluck('id'));
 
             // @phpstan-ignore-next-line method.notFound, method.nonObject
-            $this->revisions()->withDrafts()->whereNotIn('id', $revisionsToKeep)->delete();
+            $this->revisions()->withDrafts()->withoutAutoDrafts()->whereNotIn('id', $revisionsToKeep)->delete();
         });
     }
 
@@ -451,9 +511,33 @@ trait HasDrafts
             : config('drafts.column_names.uuid', 'uuid');
     }
 
+    public function getIsAutoColumn(): string
+    {
+        return defined(static::class.'::IS_AUTO')
+            ? static::IS_AUTO
+            : config('drafts.column_names.is_auto', 'is_auto');
+    }
+
+    /**
+     * Whether auto draft support is enabled.
+     *
+     * Disabled by default so that existing installations without the
+     * `is_auto` column keep working; no query references the column until
+     * the feature is switched on.
+     */
+    public static function autoDraftsEnabled(): bool
+    {
+        return (bool) config('drafts.auto_drafts.enabled', false);
+    }
+
     public function isCurrent(): bool
     {
         return $this->{$this->getIsCurrentColumn()} ?? false;
+    }
+
+    public function isAutoDraft(): bool
+    {
+        return $this->{$this->getIsAutoColumn()} ?? false;
     }
 
     /*
@@ -475,7 +559,16 @@ trait HasDrafts
      */
     public function drafts(): HasMany
     {
-        return $this->revisions()->current()->onlyDrafts();
+        /** @phpstan-ignore method.nonObject */
+        return $this->revisions()->current()->onlyDrafts()->withoutAutoDrafts();
+    }
+
+    /**
+     * @return HasOne<static, $this>
+     */
+    public function autoDraft(): HasOne
+    {
+        return $this->hasOne(static::class, $this->getUuidColumn(), $this->getUuidColumn())->onlyAutoDrafts();
     }
 
     /**
@@ -515,6 +608,29 @@ trait HasDrafts
     /**
      * @param Builder<TModel> $query
      */
+    protected function scopeOnlyAutoDrafts(Builder $query): void
+    {
+        throw_unless(static::autoDraftsEnabled(), LogicException::class, 'Auto drafts are disabled. Set the drafts.auto_drafts.enabled config option to true to use them.');
+
+        /** @phpstan-ignore method.notFound, method.nonObject */
+        $query->withDrafts()->where($this->getIsAutoColumn(), true);
+    }
+
+    /**
+     * @param Builder<TModel> $query
+     */
+    protected function scopeWithoutAutoDrafts(Builder $query): void
+    {
+        if (! static::autoDraftsEnabled()) {
+            return;
+        }
+
+        $query->where($this->getIsAutoColumn(), false);
+    }
+
+    /**
+     * @param Builder<TModel> $query
+     */
     protected function scopeExcludeRevision(Builder $query, int | Model $exclude): void
     {
         $query->where($this->getKeyName(), '!=', is_int($exclude) ? $exclude : $exclude->getKey());
@@ -535,10 +651,6 @@ trait HasDrafts
     | ACCESSORS
     |--------------------------------------------------------------------------
     */
-
-    /**
-     * @return static|null
-     */
     protected function getDraftAttribute(): ?self
     {
         if ($this->relationLoaded('drafts')) {
