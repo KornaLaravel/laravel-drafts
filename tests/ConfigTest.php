@@ -11,6 +11,7 @@ it('can override columns via config', function (): void {
     config([
         'drafts.column_names' => [
             'published_at' => 'published_at_override',
+            'will_publish_at' => 'will_publish_at_override',
             'is_published' => 'is_published_override',
             'is_current' => 'is_current_override',
             'is_auto' => 'is_auto_override',
@@ -21,6 +22,7 @@ it('can override columns via config', function (): void {
     $post = Post::query()->make();
 
     expect($post->getPublishedAtColumn())->toBe('published_at_override')
+        ->and($post->getWillPublishAtColumn())->toBe('will_publish_at_override')
         ->and($post->getIsPublishedColumn())->toBe('is_published_override')
         ->and($post->getIsCurrentColumn())->toBe('is_current_override')
         ->and($post->getIsAutoColumn())->toBe('is_auto_override')
@@ -31,6 +33,8 @@ it('can override columns via config', function (): void {
 it('can override columns via class constants', function (): void {
     $post = new class () extends Post {
         public const PUBLISHED_AT = 'published_at_override';
+
+        public const WILL_PUBLISH_AT = 'will_publish_at_override';
 
         public const IS_PUBLISHED = 'is_published_override';
 
@@ -47,6 +51,7 @@ it('can override columns via class constants', function (): void {
 
     expect($post->getPublishedAtColumn())->toBe($post::PUBLISHED_AT)
         ->and($post->getQualifiedPublishedAtColumn())->toBe($post->qualifyColumn($post::PUBLISHED_AT))
+        ->and($post->getWillPublishAtColumn())->toBe($post::WILL_PUBLISH_AT)
         ->and($post->getIsPublishedColumn())->toBe($post::IS_PUBLISHED)
         ->and($post->getIsCurrentColumn())->toBe($post::IS_CURRENT)
         ->and($post->getIsAutoColumn())->toBe($post::IS_AUTO)

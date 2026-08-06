@@ -115,15 +115,21 @@ return [
 
 #### Add the trait
 
-Add the `HasDrafts` trait to your model
+Add the `HasDrafts` trait to your model. Optionally implement the
+`Draftable` contract as well; the trait satisfies it, and it lets your own
+code typehint against the contract instead of a concrete model. A future
+major version will require the contract, so new models should implement it
+now. See [UPGRADING.md](UPGRADING.md) for a Rector rule that adds it to
+existing models automatically.
 
 ```php
 <?php
 
 use Illuminate\Database\Eloquent\Model;
 use Oddvalue\LaravelDrafts\Concerns\HasDrafts;
+use Oddvalue\LaravelDrafts\Contracts\Draftable;
 
-class Post extends Model
+class Post extends Model implements Draftable
 {
     use HasDrafts;
 
@@ -344,6 +350,54 @@ and its revisions.
 > the store for Filament form auto-saves.
 
 [filament-draft-recovery]: https://github.com/oddvalue/filament-draft-recovery
+
+#### Scheduled publishing
+
+Drafts can be scheduled to be published at a later date. The scheduled date
+is stored in the `will_publish_at` column and scheduled drafts are published
+by the `drafts:publish` artisan command.
+
+Scheduled drafts are **opt-in**. Enable them in `config/drafts.php`:
+
+```php
+'scheduled_drafts' => [
+    'enabled' => true,
+],
+```
+
+While disabled (the default) no query references the `will_publish_at`
+column, so existing installations keep working unchanged, and the scheduling
+API (`schedulePublishing()`, `clearScheduledPublishing()`, `drafts:publish`)
+throws an exception.
+
+```php
+$post = Post::find(1);
+$draft = $post->createDraft(['title' => 'Hello World']);
+
+# Schedule the draft to be published in a week (saves the record)
+$draft->schedulePublishing(now()->addWeek());
+
+# Change your mind and clear the schedule (remember to save)
+$draft->clearScheduledPublishing()->save();
+```
+
+Add the publish command to your scheduler for each model that uses scheduled
+drafts:
+
+```php
+use Oddvalue\LaravelDrafts\Commands\PublishScheduledDrafts;
+
+Schedule::command(PublishScheduledDrafts::class, [Post::class])->everyMinute();
+```
+
+Publishing a draft directly clears any scheduled date on it.
+
+> **Note**
+> If you are upgrading from a version without scheduled draft support you
+> will need to add the `will_publish_at` column to your existing tables
+> before enabling the feature:
+> `$table->timestamp('will_publish_at')->nullable();`
+> New tables created with `$table->drafts()` include the column already.
 
 #### Preview Mode
 

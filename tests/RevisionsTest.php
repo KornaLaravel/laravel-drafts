@@ -5,6 +5,26 @@ use Oddvalue\LaravelDrafts\Tests\app\Models\SoftDeletingPost;
 
 use function Spatie\PestPluginTestTime\testTime;
 
+it('can fetch revisions', function (): void {
+    $post = Post::factory()
+        ->hasRevisions(3)
+        ->create();
+
+    expect($post->revisions()->pluck('id'))
+        ->toHaveCount(4)
+        ->toContain($post->id);
+});
+
+it('can exclude a revision from the fetched revisions', function (): void {
+    $post = Post::factory()
+        ->hasRevisions(3)
+        ->create();
+
+    expect($post->revisions()->excludeRevision($post->id)->pluck('id'))
+        ->toHaveCount(3)
+        ->not->toContain($post->id);
+});
+
 it('keeps the correct number of revisions', function (): void {
     config(['drafts.revisions.keep' => 3]);
     $revsExist = function (...$titles): void {

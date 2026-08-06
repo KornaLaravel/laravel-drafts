@@ -6,6 +6,7 @@ use Closure;
 use Illuminate\Contracts\Http\Kernel;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Route;
+use Oddvalue\LaravelDrafts\Commands\PublishScheduledDrafts;
 use Oddvalue\LaravelDrafts\Http\Middleware\WithDraftsMiddleware;
 use Spatie\LaravelPackageTools\Package;
 use Spatie\LaravelPackageTools\PackageServiceProvider;
@@ -22,7 +23,8 @@ class LaravelDraftsServiceProvider extends PackageServiceProvider
         $package
             ->name('laravel-drafts')
             ->hasConfigFile()
-            ->hasViews();
+            ->hasViews()
+            ->hasCommand(PublishScheduledDrafts::class);
     }
 
     public function packageRegistered(): void
@@ -38,6 +40,7 @@ class LaravelDraftsServiceProvider extends PackageServiceProvider
             ?string $isCurrent = null,
             ?string $publisherMorphName = null,
             ?string $isAuto = null,
+            ?string $willPublishAt = null,
         ): void {
             /** @var string $uuidCol */
             $uuidCol = $uuid ?? config('drafts.column_names.uuid', 'uuid');
@@ -51,9 +54,12 @@ class LaravelDraftsServiceProvider extends PackageServiceProvider
             $publisherMorphNameCol = $publisherMorphName ?? config('drafts.column_names.publisher_morph_name', 'publisher_morph_name');
             /** @var string $isAutoCol */
             $isAutoCol = $isAuto ?? config('drafts.column_names.is_auto', 'is_auto');
+            /** @var string $willPublishAtCol */
+            $willPublishAtCol = $willPublishAt ?? config('drafts.column_names.will_publish_at', 'will_publish_at');
 
             $this->uuid($uuidCol)->nullable();
             $this->timestamp($publishedAtCol)->nullable();
+            $this->timestamp($willPublishAtCol)->nullable();
             $this->boolean($isPublishedCol)->default(false);
             $this->boolean($isCurrentCol)->default(false);
             $this->boolean($isAutoCol)->default(false);
@@ -69,6 +75,7 @@ class LaravelDraftsServiceProvider extends PackageServiceProvider
             ?string $isCurrent = null,
             ?string $publisherMorphName = null,
             ?string $isAuto = null,
+            ?string $willPublishAt = null,
         ): void {
             /** @var string $uuidCol */
             $uuidCol = $uuid ?? config('drafts.column_names.uuid', 'uuid');
@@ -82,6 +89,8 @@ class LaravelDraftsServiceProvider extends PackageServiceProvider
             $publisherMorphNameCol = $publisherMorphName ?? config('drafts.column_names.publisher_morph_name', 'publisher_morph_name');
             /** @var string $isAutoCol */
             $isAutoCol = $isAuto ?? config('drafts.column_names.is_auto', 'is_auto');
+            /** @var string $willPublishAtCol */
+            $willPublishAtCol = $willPublishAt ?? config('drafts.column_names.will_publish_at', 'will_publish_at');
 
             $this->dropIndex([$uuidCol, $isPublishedCol, $isCurrentCol]);
             $this->dropMorphs($publisherMorphNameCol);
@@ -92,6 +101,7 @@ class LaravelDraftsServiceProvider extends PackageServiceProvider
                 $isPublishedCol,
                 $isCurrentCol,
                 $isAutoCol,
+                $willPublishAtCol,
             ]);
         });
 

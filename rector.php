@@ -3,6 +3,11 @@
 declare(strict_types=1);
 
 use Rector\Config\RectorConfig;
+use RectorLaravel\Rector\Class_\DescriptionPropertyToDescriptionAttributeRector;
+use RectorLaravel\Rector\Class_\FillablePropertyToFillableAttributeRector;
+use RectorLaravel\Rector\Class_\SignaturePropertyToSignatureAttributeRector;
+use RectorLaravel\Rector\Class_\TablePropertyToTableAttributeRector;
+use RectorLaravel\Rector\Class_\WithoutTimestampsPropertyToWithoutTimestampsAttributeRector;
 use RectorLaravel\Set\LaravelSetList;
 use RectorLaravel\Set\LaravelSetProvider;
 
@@ -24,6 +29,15 @@ return RectorConfig::configure()
         removeUnusedImports: true,
     )
     ->withComposerBased(laravel: true)
+    // These attributes require Laravel 12; the package still supports
+    // Laravel 11.
+    ->withSkip([
+        DescriptionPropertyToDescriptionAttributeRector::class,
+        FillablePropertyToFillableAttributeRector::class,
+        SignaturePropertyToSignatureAttributeRector::class,
+        TablePropertyToTableAttributeRector::class,
+        WithoutTimestampsPropertyToWithoutTimestampsAttributeRector::class,
+    ])
     ->withPaths([
         __DIR__ . '/config',
         __DIR__ . '/src',

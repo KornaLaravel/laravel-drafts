@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 // config for Oddvalue/LaravelDrafts
 return [
     'revisions' => [
@@ -12,6 +14,17 @@ return [
          * `is_auto` column, so installations upgrading from a version without
          * it must add the column to their drafted tables before enabling:
          * $table->boolean('is_auto')->default(false);
+         */
+        'enabled' => false,
+    ],
+
+    'scheduled_drafts' => [
+        /*
+         * Whether scheduled draft support is enabled. Scheduled drafts require
+         * the `will_publish_at` column, so installations upgrading from a
+         * version without it must add the column to their drafted tables
+         * before enabling:
+         * $table->timestamp('will_publish_at')->nullable();
          */
         'enabled' => false,
     ],
@@ -37,6 +50,11 @@ return [
          * Timestamp column that stores the date and time when the row was published.
          */
         'published_at' => 'published_at',
+
+        /*
+         * Timestamp column that stores the date and time when the row is scheduled for publishing.
+         */
+        'will_publish_at' => 'will_publish_at',
 
         /*
          * UUID column that stores the unique identifier of the model drafts.

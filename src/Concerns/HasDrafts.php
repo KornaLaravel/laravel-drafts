@@ -2,6 +2,7 @@
 
 namespace Oddvalue\LaravelDrafts\Concerns;
 
+use Carbon\CarbonInterface;
 use Closure;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
@@ -52,6 +53,12 @@ trait HasDrafts
         if (static::autoDraftsEnabled()) {
             $this->mergeCasts([
                 $this->getIsAutoColumn() => 'boolean',
+            ]);
+        }
+
+        if (static::scheduledDraftsEnabled()) {
+            $this->mergeCasts([
+                $this->getWillPublishAtColumn() => 'datetime',
             ]);
         }
     }
@@ -206,6 +213,10 @@ trait HasDrafts
         if (! $published || $this->is($published)) {
             $this->{$this->getPublishedAtColumn()} ??= now();
             $this->{$this->getIsPublishedColumn()} = true;
+            if (static::scheduledDraftsEnabled()) {
+                $this->{$this->getWillPublishAtColumn()} = null;
+            }
+
             $this->setCurrent();
 
             return;
@@ -232,6 +243,11 @@ trait HasDrafts
             $published->{$this->getIsPublishedColumn()} = true;
             /** @phpstan-ignore method.nonObject */
             $published->{$this->getPublishedAtColumn()} ??= now();
+            if (static::scheduledDraftsEnabled()) {
+                /** @phpstan-ignore method.nonObject */
+                $published->{$this->getWillPublishAtColumn()} = null;
+            }
+
             /** @phpstan-ignore method.nonObject */
             $published->setCurrent();
             /** @phpstan-ignore method.nonObject */
@@ -243,9 +259,40 @@ trait HasDrafts
 
         $this->{$this->getIsPublishedColumn()} = false;
         $this->{$this->getPublishedAtColumn()} = null;
+        if (static::scheduledDraftsEnabled()) {
+            $this->{$this->getWillPublishAtColumn()} = null;
+        }
+
         $this->{$this->getIsCurrentColumn()} = false;
         $this->timestamps = false;
         $this->shouldCreateRevision = false;
+    }
+
+    /**
+     * Schedule the record to be published at the given date by the
+     * `drafts:publish` command.
+     */
+    public function schedulePublishing(CarbonInterface $date): static
+    {
+        throw_unless(static::scheduledDraftsEnabled(), LogicException::class, 'Scheduled drafts are disabled. Set the drafts.scheduled_drafts.enabled config option to true to use them.');
+
+        $this->{$this->getWillPublishAtColumn()} = $date;
+        $this->save();
+
+        return $this;
+    }
+
+    /**
+     * Remove the record's scheduled publish date. The change is not
+     * persisted; call `save()` afterwards.
+     */
+    public function clearScheduledPublishing(): static
+    {
+        throw_unless(static::scheduledDraftsEnabled(), LogicException::class, 'Scheduled drafts are disabled. Set the drafts.scheduled_drafts.enabled config option to true to use them.');
+
+        $this->{$this->getWillPublishAtColumn()} = null;
+
+        return $this;
     }
 
     public function replicateAndAssociateDraftableRelations(Model $published): void
@@ -518,6 +565,13 @@ trait HasDrafts
             : config('drafts.column_names.is_auto', 'is_auto');
     }
 
+    public function getWillPublishAtColumn(): string
+    {
+        return defined(static::class.'::WILL_PUBLISH_AT')
+            ? static::WILL_PUBLISH_AT
+            : config('drafts.column_names.will_publish_at', 'will_publish_at');
+    }
+
     /**
      * Whether auto draft support is enabled.
      *
@@ -528,6 +582,18 @@ trait HasDrafts
     public static function autoDraftsEnabled(): bool
     {
         return (bool) config('drafts.auto_drafts.enabled', false);
+    }
+
+    /**
+     * Whether scheduled draft support is enabled.
+     *
+     * Disabled by default so that existing installations without the
+     * `will_publish_at` column keep working; no query references the column
+     * until the feature is switched on.
+     */
+    public static function scheduledDraftsEnabled(): bool
+    {
+        return (bool) config('drafts.scheduled_drafts.enabled', false);
     }
 
     public function isCurrent(): bool
